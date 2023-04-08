@@ -1,0 +1,35 @@
+log_level: DEBUG
+tag_prefix: v
+sync_branch_prefix: pipe/sync
+
+repos:
+  qdo:
+    path: /Users/kkkk/projects/qdo/pipeline-shared-library
+    ignore_folders: &ignore_folders
+      - .helm/
+      - src/com/pipeline/data/
+      - Jenkinsfile
+      - .sops.yaml
+      - vars/globalEnv.groovy
+      - test/
+    replacements: []
+  skybonds:
+    path: /Users/kkkk/projects/skybonds/pipeline-shared-library
+    ignore_folders:
+      - .helm/
+      - src/com/skybonds/data/
+      - test/
+      - Jenkinsfile
+      - .sops.yaml
+      - vars/globalEnv.groovy
+      - jenkinsfiles/
+      - jobs/
+    replacements:
+      - from: /src/com/pipeline
+        to: /src/com/skybonds
+      - from: com.pipeline
+        to: com.skybonds
+  insly:
+    path: /Users/kkkk/projects/insly/pipeline-shared-library
+    ignore_folders: *ignore_folders
+    replacements: []

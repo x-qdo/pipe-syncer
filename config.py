@@ -1,10 +1,14 @@
 # Configuration
 import logging
+import yaml
 
-log_level = logging.DEBUG
-# TODO migrate to config file like YAML
-source_repo_path = "/Users/kkkk/projects/insly/pipeline-shared-library"
-target_repo_path = "/Users/kkkk/projects/qdo/pipeline-shared-library"
-tag_prefix = "v"
-ignore_folders = ["test/DockerfileSSH", ".helm/", "Jenkinsfile", ".github/", "src/com/pipeline/data", ".git/",
-                  ".sops.yaml"]
+
+def read_config(file_path):
+    with open(file_path, 'r') as file:
+        return yaml.safe_load(file)
+
+
+config = read_config('config.yaml')
+log_level = config['log_level']
+tag_prefix = config['tag_prefix']
+sync_branch_prefix = config['sync_branch_prefix']
