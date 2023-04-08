@@ -5,14 +5,13 @@ from git import DiffIndex, Repo, Diff
 
 
 class CustomApply:
-    def __init__(self, target_repo: Repo, diff_index: DiffIndex, dry_run=False):
-        self.diff_index = diff_index
+    def __init__(self, target_repo: Repo, dry_run=False):
         self.dry_run = dry_run
         self.target_repo = target_repo
 
-    def apply(self):
+    def apply(self, diff_index: DiffIndex):
         patch_applied = False
-        for diff in self.diff_index:
+        for diff in diff_index:
             if diff.deleted_file:
                 patch_applied = self._handle_delete(diff)
             elif diff.new_file:
@@ -182,6 +181,12 @@ class CustomApply:
 
                 if file_context_start == possible_context_start and \
                         file_context_end == possible_context_end:
-                    return idx + context_match_start_len
+                    # Check if the deleted lines match the lines in the original file
+                    file_removed_lines_start_idx = idx + context_match_start_len
+                    file_removed_lines_end_idx = idx + context_match_start_len + len(removed_lines)
+                    file_removed_lines = file_lines[file_removed_lines_start_idx:file_removed_lines_end_idx]
+
+                    if file_removed_lines == removed_lines:
+                        return idx + context_match_start_len
 
         return -1

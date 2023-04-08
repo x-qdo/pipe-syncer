@@ -53,8 +53,8 @@ class TestCustomApply(unittest.TestCase):
         diff = commit.parents[0].diff(commit, create_patch=True, ignore_cr_at_eol=True)
 
         # Apply the diff using the CustomApply class
-        custom_apply = CustomApply(self.target_repo, diff)
-        custom_apply.apply()
+        custom_apply = CustomApply(self.target_repo)
+        custom_apply.apply(diff)
 
         # Assert that the new file exists in the target repo and has the same content
         new_file_target_path = os.path.join(self.target_repo.working_tree_dir, 'new_file.txt')
@@ -140,8 +140,8 @@ class TestCustomApply(unittest.TestCase):
         diff = commit.parents[0].diff(commit, create_patch=True, ignore_cr_at_eol=True)
 
         # Apply the diff using the CustomApply class
-        custom_apply = CustomApply(self.target_repo, diff)
-        custom_apply.apply()
+        custom_apply = CustomApply(self.target_repo)
+        custom_apply.apply(diff)
         output, err = self.capfd.readouterr()  # https://github.com/pytest-dev/pytest/issues/2504#issuecomment-309475790
         self.assertIn(expected_output, output, f"{name}: {output}")
 

@@ -4,7 +4,7 @@ from itertools import chain
 
 from apply import CustomApply
 from config import log_level, tag_prefix, config, sync_branch_prefix
-from utils import get_latest_semver_tag, find_nearest_common_tag, generate_exclude_args, apply_replacements_to_patch
+from utils import get_latest_semver_tag, find_nearest_common_tag, apply_replacements_to_patch
 from git import Repo, GitCommandError
 import semver
 import logging
@@ -31,6 +31,7 @@ target_repo_config = config["repos"][target_repo_name]
 
 source_repo = Repo(source_repo_config["path"])
 target_repo = Repo(target_repo_config["path"])
+custom_apply = CustomApply(target_repo)
 
 if args.range:
     logger.debug("Using specified commit range: {}".format(args.range))
@@ -85,12 +86,11 @@ for commit_hash in reversed(commits_to_apply):
 
     commit = source_repo.commit(commit_hash)
     short_message = (commit.message[:75] + '..') if len(commit.message) > 75 else commit.message
-    logger.info(f"Applying commit: {short_message}")
+    logger.info(f"Applying commit [{commit_hash}]: {short_message}")
 
     diff = commit.parents[0].diff(commit, create_patch=True, ignore_cr_at_eol=True, unified=5)
     # Apply the diff using the CustomApply class
-    custom_apply = CustomApply(target_repo, diff)
-    if custom_apply.apply():
+    if custom_apply.apply(diff):
         logger.info(f"Applied commit {commit_hash} to target repo")
         original_message = commit.message.strip()
         updated_message = f"{original_message}\n\nOriginal commit: {commit_hash}"

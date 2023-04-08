@@ -67,15 +67,6 @@ def move_tag(repo, tag_name, new_commit):
     repo.create_tag(tag_name, ref=new_commit, force=True)
 
 
-def generate_exclude_args(ignore_folders):
-    exclude_args = []
-    for folder in ignore_folders:
-        if folder.endswith('/'):
-            folder = f"{folder}*"
-        exclude_args.append(f"--exclude={folder}")
-    return exclude_args
-
-
 def apply_replacements_to_patch(patch_stream, replacements):
     patch_content = patch_stream.getvalue().decode("utf-8")
     for replacement in replacements:
