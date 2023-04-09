@@ -1,4 +1,4 @@
-log_level: DEBUG
+log_level: INFO
 tag_prefix: v
 sync_branch_prefix: pipe/sync
 

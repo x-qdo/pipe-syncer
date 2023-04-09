@@ -1,12 +1,33 @@
 import os
 import re
+import textwrap
 
+import pyperclip
 from git import DiffIndex, Repo, Diff
 
 
+class DiffHunk:
+    def __init__(self, a_start, a_lines, b_start, b_lines):
+        self.a_start = a_start
+        self.a_lines = a_lines
+        self.b_start = b_start
+        self.b_lines = b_lines
+        self.before_context = ""
+        self.after_context = ""
+        self.removed_lines = ""
+        self.added_lines = ""
+
+    def set_content(self, before_context, after_context, removed_lines, added_lines):
+        self.before_context = before_context
+        self.after_context = after_context
+        self.removed_lines = removed_lines
+        self.added_lines = added_lines
+
+
 class CustomApply:
-    def __init__(self, target_repo: Repo, dry_run=False):
+    def __init__(self, target_repo: Repo, dry_run=False, interactive=False):
         self.dry_run = dry_run
+        self.interactive = interactive
         self.target_repo = target_repo
 
     def apply(self, diff_index: DiffIndex):
@@ -54,38 +75,57 @@ class CustomApply:
         return False
 
     def _handle_modify(self, diff: Diff):
+        print(f"Working on M path in file {diff.b_path}")
         file_path = os.path.join(self.target_repo.working_dir, diff.b_path)
+        if not os.path.exists(file_path):
+            print(f"Target file path not found, maybe file was already renamed or removed: {diff.b_path}")
+            return False
+
         diff_chunks = self._extract_diff_chunks(diff)
 
         with open(file_path, 'r') as f:
             file_lines = [line.strip('\n') for line in f.readlines()]
 
+        all_patches_applied = True
         for chunk in diff_chunks:
-            context_start, context_end, removed_lines, added_lines = chunk
-
-            start_position = self._search_context(file_lines, context_start, context_end, removed_lines)
+            start_position, replace_len = self._search_context(file_lines, chunk)
             if start_position != -1:
                 if not self.dry_run:
-                    file_lines[start_position: start_position + len(removed_lines)] = added_lines
+                    file_lines[start_position: start_position + replace_len] = chunk.added_lines
                 print(f"Applied change in {diff.b_path} at line {start_position + 1}")
             else:
-                print(f"Unable to apply change in {diff.b_path}:")
-                print(str(diff))
-                return False
+                all_patches_applied = False
+
+        if not all_patches_applied:
+            patch = f"--- a/{diff.a_path}\n" \
+                    + f"+++ a/{diff.b_path}\n" \
+                    + diff.diff.decode() \
+                    + "\n--\n"
+
+            if self.interactive:
+                print(f"Unable to apply patch, moved to you clipboard")
+                pyperclip.copy(patch)
+            else:
+                print(f"Unable to apply patch, you can copy it and use IDE:")
+                print(f"\n{patch}")
+            return False
 
         if not self.dry_run:
             with open(file_path, 'w') as f:
                 f.writelines([f"{line}\n" for line in file_lines])
         return True
 
-    def _extract_diff_chunks(self, diff: Diff):
+    def _extract_diff_chunks(self, diff: Diff) -> list[DiffHunk]:
         diff_chunks = []
         diff_string = diff.diff.decode()
+
         hunks = re.findall(r'@@ -(\d+),(\d+) \+(\d+),(\d+) @@', diff_string)
         hunk_contents = re.split(r'@@ -\d+,\d+ \+\d+,\d+ @@(?:\n)?', diff_string)[1:]
 
         for hunk, content in zip(hunks, hunk_contents):
             a_start, a_lines, b_start, b_lines = map(int, hunk)
+            diff_hunk = DiffHunk(a_start, a_lines, b_start, b_lines)
+
             content_lines = content.splitlines()
 
             before_context = []
@@ -103,7 +143,10 @@ class CustomApply:
                     if last_line_was_context and (removed_lines or added_lines):
                         # If the last line was a context line and we already have removed or added lines,
                         # we should start a new hunk for the broken context
-                        diff_chunks.append((before_context, after_context, removed_lines, added_lines))
+                        diff_hunk.set_content(before_context, after_context, removed_lines, added_lines)
+                        diff_chunks.append(diff_hunk)
+                        diff_hunk = DiffHunk(a_start, a_lines, b_start, b_lines)
+
                         before_context = after_context
                         after_context = []
                         removed_lines = []
@@ -123,11 +166,17 @@ class CustomApply:
                         before_context.append(line)
                     last_line_was_context = True
 
-            diff_chunks.append((before_context, after_context, removed_lines, added_lines))
+            diff_hunk.set_content(before_context, after_context, removed_lines, added_lines)
+            diff_chunks.append(diff_hunk)
 
         return diff_chunks
 
-    def _search_context(self, file_lines, context_start, context_end, removed_lines):
+    def _format_log_lines(self, lines, prefix="| "):
+        if len(lines):
+            return textwrap.indent("\n".join(lines), prefix) + "\n"
+        return ""
+
+    def _search_context(self, file_lines, hunk: DiffHunk):
         """
         Locating line number based on hunk surround context using variable lengths
 
@@ -149,44 +198,80 @@ class CustomApply:
             else:
                 return list(filter(lambda x: x[0] != 0 and x[1] != 0, combinations))
 
-        max_context_match_start_len = len(context_start)
-        max_context_match_end_len = len(context_end)
+        max_start_len = len(hunk.before_context)
+        max_end_len = len(hunk.after_context)
 
         # Remove whitespaces from context lines
         # context_start = [line.replace(" ", "") for line in context_start]
         # context_end = [line.replace(" ", "") for line in context_end]
 
         #
-        for context_match_start_len, context_match_end_len in generate_combinations(max_context_match_start_len,
-                                                                                    max_context_match_end_len):
+        for match_start_len, match_end_len in generate_combinations(max_start_len, max_end_len):
             # taking [l-N:l] lines from the context start
-            possible_context_start = context_start[
-                                     len(context_start) - context_match_start_len:len(context_start)]
+            possible_context_start = hunk.before_context[
+                                     len(hunk.before_context) - match_start_len:len(hunk.before_context)]
 
             # taking [0:N] lines from the context end
-            possible_context_end = context_end[0:context_match_end_len]
+            possible_context_end = hunk.after_context[0:match_end_len]
+            possible_match_found = False
 
-            for idx in range(len(file_lines) - context_match_start_len
-                             - context_match_end_len - len(removed_lines) + 1):
-                file_context_start = file_lines[idx:idx + context_match_start_len]
-
-                file_context_end_start_index = idx + context_match_start_len + len(removed_lines)
-                file_context_end_end_index = idx + context_match_start_len + len(
-                    removed_lines) + context_match_end_len
-                file_context_end = file_lines[file_context_end_start_index:file_context_end_end_index]
+            for idx in range(len(file_lines) - match_start_len - match_end_len - len(hunk.removed_lines) + 1):
+                file_context_start = file_lines[idx:idx + match_start_len]
 
                 # Remove whitespaces from file context lines
                 # file_context_start = [line.replace(" ", "") for line in file_context_start]
                 # file_context_end = [line.replace(" ", "") for line in file_context_end]
 
-                if file_context_start == possible_context_start and \
-                        file_context_end == possible_context_end:
-                    # Check if the deleted lines match the lines in the original file
-                    file_removed_lines_start_idx = idx + context_match_start_len
-                    file_removed_lines_end_idx = idx + context_match_start_len + len(removed_lines)
-                    file_removed_lines = file_lines[file_removed_lines_start_idx:file_removed_lines_end_idx]
+                if file_context_start == possible_context_start:
+                    file_context_end_start_index = idx + match_start_len + len(hunk.removed_lines)
+                    file_context_end_end_index = idx + match_start_len + len(hunk.removed_lines) + match_end_len
+                    file_context_end = file_lines[file_context_end_start_index:file_context_end_end_index]
 
-                    if file_removed_lines == removed_lines:
-                        return idx + context_match_start_len
+                    file_context_applied_start_index = idx + match_start_len + len(hunk.added_lines)
+                    file_context_applied_end_index = idx + match_start_len + len(hunk.added_lines) + match_end_len
+                    file_context_applied = file_lines[file_context_applied_start_index:file_context_applied_end_index]
 
-        return -1
+                    if file_context_end == possible_context_end:
+                        # Check if the deleted lines match the lines in the original file
+                        file_removed_lines_start_idx = idx + match_start_len
+                        file_removed_lines_end_idx = file_context_end_start_index
+                        file_removed_lines = file_lines[file_removed_lines_start_idx:file_removed_lines_end_idx]
+
+                        if file_removed_lines == hunk.removed_lines:
+                            print(
+                                f"Found match with context at {idx + match_start_len}: {match_start_len}/{match_end_len}")
+                            print(self._format_log_lines(file_context_start)
+                                  + self._format_log_lines(hunk.removed_lines, " -")
+                                  + self._format_log_lines(hunk.added_lines, " +")
+                                  + self._format_log_lines(file_context_end))
+
+                            return idx + match_start_len, len(hunk.removed_lines)
+                        else:
+                            print(f"Fount potential match, "
+                                  f"but content differ, at {idx + match_start_len}: {match_start_len}/{match_end_len}")
+                            print("Expected:")
+                            print(self._format_log_lines(hunk.removed_lines))
+                            print("Found:")
+                            print(self._format_log_lines(file_removed_lines))
+                            possible_match_found = True
+
+                    elif file_context_applied == possible_context_end:
+                        file_added_lines_end_idx = idx + match_start_len + len(hunk.added_lines)
+                        file_added_lines = file_lines[idx + match_start_len:file_added_lines_end_idx]
+
+                        if file_added_lines == hunk.added_lines:
+                            print(f"Diff already applied at {idx + match_start_len}: {match_start_len}/{match_end_len}")
+                            print(self._format_log_lines(file_added_lines, " +"))
+                            return idx + match_start_len, len(hunk.added_lines)
+
+            if possible_match_found:
+                # We found potential match in a file, and we do not need to reduce context to locate
+                # the potential match
+                return -1, -1
+
+        print("Couldn't find context for")
+        print(self._format_log_lines(hunk.before_context)
+              + self._format_log_lines(hunk.removed_lines, " -")
+              + self._format_log_lines(hunk.added_lines, " +")
+              + self._format_log_lines(hunk.after_context))
+        return -1, -1

@@ -17,6 +17,7 @@ parser = argparse.ArgumentParser(description="Sync repositories")
 parser.add_argument("from_repo", help="The source repository name")
 parser.add_argument("to_repo", help="The target repository name")
 parser.add_argument("--range", help="Specific commit range in format 'start_commit..end_commit'", default="")
+parser.add_argument("--interactive", "-i", action=argparse.BooleanOptionalAction)
 args = parser.parse_args()
 
 source_repo_name = args.from_repo
@@ -31,7 +32,7 @@ target_repo_config = config["repos"][target_repo_name]
 
 source_repo = Repo(source_repo_config["path"])
 target_repo = Repo(target_repo_config["path"])
-custom_apply = CustomApply(target_repo)
+custom_apply = CustomApply(target_repo, interactive=args.interactive)
 
 if args.range:
     logger.debug("Using specified commit range: {}".format(args.range))
@@ -86,7 +87,12 @@ for commit_hash in reversed(commits_to_apply):
 
     commit = source_repo.commit(commit_hash)
     short_message = (commit.message[:75] + '..') if len(commit.message) > 75 else commit.message
-    logger.info(f"Applying commit [{commit_hash}]: {short_message}")
+    logger.info(f"Applying commit [{commit_hash}]:\n{short_message}")
+
+    if args.interactive:
+        user_input = input("Apply? [Y/n]: ")
+        if user_input == 'n':
+            exit(0)
 
     diff = commit.parents[0].diff(commit, create_patch=True, ignore_cr_at_eol=True, unified=5)
     # Apply the diff using the CustomApply class
@@ -98,55 +104,3 @@ for commit_hash in reversed(commits_to_apply):
         target_repo.git.commit("-m", updated_message)
     else:
         logger.error(f"Can't apply commit {commit_hash} to target repo")
-
-    # stream = io.BytesIO()
-    # patch = source_repo.git.format_patch(
-    #     "--no-stat", "--no-numbered", "--stdout", "--no-attach", "-k", "-1",
-    #     str(commit.hexsha), output_stream=stream
-    # )
-    # stream = apply_replacements_to_patch(stream, target_repo_config["replacements"])
-    # with open("patch.txt", "wb") as f:
-    #     f.write(stream.getbuffer())
-
-    # Create a patch excluding the specified folders
-    # filtered_diff = create_patch(commit, ignore_folders)
-    # Check if the patch has already been applied
-    # try:
-    #     with open("patch.txt", "rb") as f:
-    #         exclude_args = generate_exclude_args(source_repo_config["ignore_folders"])
-    #         (status, stdout, stderr) = target_repo.git.apply(
-    #             "--3way", "--check",
-    #             *exclude_args,
-    #             "-v",
-    #             "--unidiff-zero",
-    #             "--recount",
-    #             istream=f,
-    #             with_extended_output=True, with_exceptions=False
-    #         )
-    #
-    #     # Reopen file to reset a pointer for stdin stream
-    #     with open("patch.txt", "rb") as f:
-    #         if status == 0:
-    #             logger.info(f"Possible to apply commit {commit_hash} to target repo")
-    #             # Apply the patch
-    #             exclude_args = generate_exclude_args(target_repo_config["ignore_folders"])
-    #             (status, stdout, stderr) = target_repo.git.apply(
-    #                 "--3way",
-    #                 *exclude_args,
-    #                 "-v",
-    #                 "--unidiff-zero",
-    #                 "--recount",
-    #                 istream=f,
-    #                 with_extended_output=True,
-    #                 with_exceptions=False
-    #             )
-    #             logger.info(f"Applied commit {commit_hash} to target repo: %s\n\n%s" % (stdout, stderr))
-    #             original_message = commit.message.strip()
-    #             updated_message = f"{original_message}\n\nOriginal commit: {commit_hash}"
-    #             target_repo.git.commit("-m", updated_message)
-    #         else:
-    #             logger.error(f"Can't apply commit {commit_hash} to target repo: %s" % stderr)
-    #
-    # except GitCommandError as e:
-    #     logger.error(f"Failed to apply commit {commit_hash}: {e}")
-    #     continue
