@@ -90,9 +90,12 @@ for commit_hash in reversed(commits_to_apply):
     logger.info(f"Applying commit [{commit_hash}]:\n{short_message}")
 
     if args.interactive:
-        user_input = input("Apply? [Y/n]: ")
+        user_input = input("Apply? [Y/n/s]: ")
         if user_input == 'n':
             exit(0)
+        elif user_input == 's':
+            logger.info("Skip applying")
+            continue
 
     diff = commit.parents[0].diff(commit, create_patch=True, ignore_cr_at_eol=True, unified=5)
     # Apply the diff using the CustomApply class
