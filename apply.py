@@ -55,6 +55,10 @@ class CustomApply:
 
     def _handle_create(self, diff: Diff):
         file_path = os.path.join(self.target_repo.working_dir, diff.b_path)
+        dir_path = os.path.dirname(file_path)  # get the directory path
+
+        # make sure all directories exist
+        os.makedirs(dir_path, exist_ok=True)
         if not os.path.exists(file_path):
             if not self.dry_run:
                 with open(file_path, 'w') as f:
