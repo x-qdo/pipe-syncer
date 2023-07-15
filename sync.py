@@ -1,10 +1,9 @@
-import io
 import argparse
 from itertools import chain
 
 from apply import CustomApply
 from config import log_level, tag_prefix, config, sync_branch_prefix
-from utils import get_latest_semver_tag, find_nearest_common_tag, apply_replacements_to_patch
+from utils import get_latest_semver_tag, find_nearest_common_tag, apply_replacements_to_patch, commit_changes
 from git import Repo, GitCommandError
 import semver
 import logging
@@ -98,12 +97,17 @@ for commit_hash in reversed(commits_to_apply):
             continue
 
     diff = commit.parents[0].diff(commit, create_patch=True, ignore_cr_at_eol=True, unified=5)
+    diff = apply_replacements_to_patch(diff, source_repo_config["replacements"], 'source')
+    diff = apply_replacements_to_patch(diff, target_repo_config["replacements"], 'target')
+
+    original_message = commit.message.strip()
+    updated_message = f"{original_message}\n\nOriginal commit: {commit_hash}"
+
     # Apply the diff using the CustomApply class
     if custom_apply.apply(diff):
         logger.info(f"Applied commit {commit_hash} to target repo")
-        original_message = commit.message.strip()
-        updated_message = f"{original_message}\n\nOriginal commit: {commit_hash}"
         target_repo.git.add(".")
-        target_repo.git.commit("-m", updated_message)
+        commit_changes(target_repo, updated_message)
     else:
-        logger.error(f"Can't apply commit {commit_hash} to target repo")
+        logger.error(f"Can't apply commit {commit_hash} to target repo. \nManually applied patch should be committed "
+                     f"with message: \n========================\n{updated_message}\n========================")

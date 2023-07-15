@@ -1,9 +1,9 @@
-import io
 import os
-import re
 from collections import defaultdict
 
 import semver
+from git import DiffIndex
+from git.exc import GitCommandError
 
 
 def get_file_changes(patch):
@@ -67,8 +67,48 @@ def move_tag(repo, tag_name, new_commit):
     repo.create_tag(tag_name, ref=new_commit, force=True)
 
 
-def apply_replacements_to_patch(patch_stream, replacements):
-    patch_content = patch_stream.getvalue().decode("utf-8")
+def apply_replacements_to_bytes(string_buffer, replacements, direction):
+    if string_buffer is None:
+        return string_buffer
+
+    string = string_buffer.decode()
+
     for replacement in replacements:
-        patch_content = patch_content.replace(replacement["from"], replacement["to"])
-    return io.BytesIO(patch_content.encode("utf-8"))
+        # determine a direction of replace for a source we replace to -> from
+        #      for target from -> to
+        if direction == 'source':
+            replace_from = replacement["to"]
+            replace_to = replacement["from"]
+        else:
+            replace_from = replacement["from"]
+            replace_to = replacement["to"]
+
+        string = string.replace(replace_from, replace_to)
+
+    return string.encode()
+
+
+def apply_replacements_to_patch(diff_index: DiffIndex, replacements, direction='source'):
+    if len(replacements) == 0:
+        return diff_index
+
+    for diff in diff_index:
+        diff.a_rawpath = apply_replacements_to_bytes(diff.a_rawpath, replacements, direction)
+        diff.b_rawpath = apply_replacements_to_bytes(diff.b_rawpath, replacements, direction)
+        diff.diff = apply_replacements_to_bytes(diff.diff, replacements, direction)
+
+    return diff_index
+
+
+def commit_changes(repo, message):
+    try:
+        repo.git.commit("-m", message)
+    except GitCommandError as e:
+        # Parse the error message
+        error_message = str(e)
+        if 'nothing to commit, working tree clean' in error_message:
+            print('No changes to commit, skipping...')
+        else:
+            print(f'An error occurred when committing changes: {error_message}')
+            raise e  # re-raise the exception for any other errors
+    return True
