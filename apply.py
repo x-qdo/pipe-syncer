@@ -109,6 +109,7 @@ class CustomApply:
             if self.interactive:
                 print(f"Unable to apply patch, moved to you clipboard")
                 pyperclip.copy(patch)
+                input("To continue press any key...")
             else:
                 print(f"Unable to apply patch, you can copy it and use IDE:")
                 print(f"\n{patch}")
