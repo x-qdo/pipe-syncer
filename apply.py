@@ -25,10 +25,11 @@ class DiffHunk:
 
 
 class CustomApply:
-    def __init__(self, target_repo: Repo, dry_run=False, interactive=False):
+    def __init__(self, target_repo: Repo, dry_run=False, interactive=False, replacement_fn=None):
         self.dry_run = dry_run
         self.interactive = interactive
         self.target_repo = target_repo
+        self.replacement_fn = replacement_fn
 
     def apply(self, diff_index: DiffIndex):
         patch_applied = False
@@ -62,7 +63,11 @@ class CustomApply:
         if not os.path.exists(file_path):
             if not self.dry_run:
                 with open(file_path, 'w') as f:
-                    f.write(diff.b_blob.data_stream.read().decode('utf-8'))
+                    content = diff.b_blob.data_stream.read()
+                    # Apply the replacement function if it is defined
+                    if self.replacement_fn is not None:
+                        content = self.replacement_fn(content)
+                    f.write(content.decode('utf-8'))
                 print(f"Created file {diff.b_path}")
             return True
         return False
