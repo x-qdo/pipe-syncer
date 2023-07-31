@@ -121,3 +121,7 @@ for commit_hash in reversed(commits_to_apply):
     else:
         logger.error(f"Can't apply commit {commit_hash} to target repo. \nManually applied patch should be committed "
                      f"with message: \n========================\n{updated_message}\n========================")
+
+if source_latest_tag:
+    tag_message = f"Synced commit tagged with source repo tag: {source_latest_tag.name}"
+    create_tag(logger, target_repo, source_latest_tag.name, tag_message)

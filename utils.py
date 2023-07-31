@@ -112,3 +112,13 @@ def commit_changes(repo, message):
             print(f'An error occurred when committing changes: {error_message}')
             raise e  # re-raise the exception for any other errors
     return True
+
+
+def create_tag(logger, repo, tag, message):
+    try:
+        new_tag = repo.create_tag(tag, message=message)
+        logger.info(f"Tag {tag} created successfully.")
+        return new_tag
+    except Exception as e:
+        logger.error(f"Failed to create tag {tag}. Error: {e}")
+        return None
