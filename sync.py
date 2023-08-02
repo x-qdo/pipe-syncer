@@ -1,10 +1,10 @@
-import io
 import argparse
 from itertools import chain
 
 from apply import CustomApply
 from config import log_level, tag_prefix, config, sync_branch_prefix
-from utils import get_latest_semver_tag, find_nearest_common_tag, apply_replacements_to_patch
+from utils import get_latest_semver_tag, find_nearest_common_tag, apply_replacements_to_patch, commit_changes, \
+    create_tag, apply_replacements_to_bytes
 from git import Repo, GitCommandError
 import semver
 import logging
@@ -32,7 +32,16 @@ target_repo_config = config["repos"][target_repo_name]
 
 source_repo = Repo(source_repo_config["path"])
 target_repo = Repo(target_repo_config["path"])
-custom_apply = CustomApply(target_repo, interactive=args.interactive)
+custom_apply = CustomApply(
+    target_repo,
+    interactive=args.interactive,
+    replacement_fn=lambda content: apply_replacements_to_bytes(
+        apply_replacements_to_bytes(content, source_repo_config["replacements"], 'source'),
+        target_repo_config["replacements"],
+        'target'
+    )
+)
+source_latest_tag = None
 
 if args.range:
     logger.debug("Using specified commit range: {}".format(args.range))
@@ -90,17 +99,29 @@ for commit_hash in reversed(commits_to_apply):
     logger.info(f"Applying commit [{commit_hash}]:\n{short_message}")
 
     if args.interactive:
-        user_input = input("Apply? [Y/n]: ")
+        user_input = input("Apply? [Y/n/s]: ")
         if user_input == 'n':
             exit(0)
+        elif user_input == 's':
+            logger.info("Skip applying")
+            continue
 
     diff = commit.parents[0].diff(commit, create_patch=True, ignore_cr_at_eol=True, unified=5)
+    diff = apply_replacements_to_patch(diff, source_repo_config["replacements"], 'source')
+    diff = apply_replacements_to_patch(diff, target_repo_config["replacements"], 'target')
+
+    original_message = commit.message.strip()
+    updated_message = f"{original_message}\n\nOriginal commit: {commit_hash}"
+
     # Apply the diff using the CustomApply class
     if custom_apply.apply(diff):
         logger.info(f"Applied commit {commit_hash} to target repo")
-        original_message = commit.message.strip()
-        updated_message = f"{original_message}\n\nOriginal commit: {commit_hash}"
         target_repo.git.add(".")
-        target_repo.git.commit("-m", updated_message)
+        commit_changes(target_repo, updated_message)
     else:
-        logger.error(f"Can't apply commit {commit_hash} to target repo")
+        logger.error(f"Can't apply commit {commit_hash} to target repo. \nManually applied patch should be committed "
+                     f"with message: \n========================\n{updated_message}\n========================")
+
+if source_latest_tag:
+    tag_message = f"Synced commit tagged with source repo tag: {source_latest_tag.name}"
+    create_tag(logger, target_repo, source_latest_tag.name, tag_message)

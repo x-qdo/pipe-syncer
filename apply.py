@@ -25,10 +25,11 @@ class DiffHunk:
 
 
 class CustomApply:
-    def __init__(self, target_repo: Repo, dry_run=False, interactive=False):
+    def __init__(self, target_repo: Repo, dry_run=False, interactive=False, replacement_fn=None):
         self.dry_run = dry_run
         self.interactive = interactive
         self.target_repo = target_repo
+        self.replacement_fn = replacement_fn
 
     def apply(self, diff_index: DiffIndex):
         patch_applied = False
@@ -55,10 +56,18 @@ class CustomApply:
 
     def _handle_create(self, diff: Diff):
         file_path = os.path.join(self.target_repo.working_dir, diff.b_path)
+        dir_path = os.path.dirname(file_path)  # get the directory path
+
+        # make sure all directories exist
+        os.makedirs(dir_path, exist_ok=True)
         if not os.path.exists(file_path):
             if not self.dry_run:
                 with open(file_path, 'w') as f:
-                    f.write(diff.b_blob.data_stream.read().decode('utf-8'))
+                    content = diff.b_blob.data_stream.read()
+                    # Apply the replacement function if it is defined
+                    if self.replacement_fn is not None:
+                        content = self.replacement_fn(content)
+                    f.write(content.decode('utf-8'))
                 print(f"Created file {diff.b_path}")
             return True
         return False
@@ -105,6 +114,7 @@ class CustomApply:
             if self.interactive:
                 print(f"Unable to apply patch, moved to you clipboard")
                 pyperclip.copy(patch)
+                input("To continue press any key...")
             else:
                 print(f"Unable to apply patch, you can copy it and use IDE:")
                 print(f"\n{patch}")
