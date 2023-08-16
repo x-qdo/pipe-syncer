@@ -99,10 +99,10 @@ for commit_hash in reversed(commits_to_apply):
     logger.info(f"Applying commit [{commit_hash}]:\n{short_message}")
 
     if args.interactive:
-        user_input = input("Apply? [Y/n/s]: ")
-        if user_input == 'n':
+        user_input = input("Apply commit? [Y]es, [n]o, [a]bort sync: ")
+        if user_input == 'a':
             exit(0)
-        elif user_input == 's':
+        elif user_input == 'n':
             logger.info("Skip applying")
             continue
 
